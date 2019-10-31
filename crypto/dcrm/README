@@ -1,0 +1,19 @@
+so:
+
+1. 修改dev.go为main包。
+2. 进入dev目录，
+go build --buildmode=plugin ./dev.go
+3. fusion_dcrm.go换成fusion_dcrm.go.bak
+4. 拷贝dev.so到源码根目录。
+5. 
+修改golang plugin包底层实现并重新编译，打开runtime/plugin.go, 注释以下代码 
+for _, pkghash := range md.pkghashes { 
+if pkghash.linktimehash != *pkghash.runtimehash { 
+return "", nil,
+pkghash.modulename 
+} 
+} 
+执行/usr/local/go/src/run.bash 重编译+测试
+6. make clean
+make bootnode
+make gdcrm

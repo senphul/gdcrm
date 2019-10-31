@@ -1,0 +1,185 @@
+// Copyright 2018 The fusion-dcrm 
+//Author: caihaijun@fusion.org
+
+package dcrm
+
+import (
+	"fmt"
+	"strings"
+	p2pdcrm "github.com/fusion/go-fusion/p2p/layer2"
+	"strconv"
+	"time"
+	"plugin"
+	"github.com/fusion/go-fusion/log"
+	//"github.com/fusion/go-fusion/crypto/dcrm/dev"
+)
+////////////
+
+var (
+    tmp2 string
+    cur_enode string
+    init_times = 0
+)
+
+func Start() {
+    fmt.Println("\n===================Dcrm Already Start!====================\n")
+}
+
+func SendReqToGroup(msg string,rpctype string) (string,error) {
+       p, err := plugin.Open("dev.so")
+       if err != nil {
+	   panic(err)
+       }
+       //SendReqToGroup
+       sendreq, err := p.Lookup("SendReqToGroup")
+       if err != nil {
+	   panic(err)
+       }
+       sendreqf := sendreq.(func(string,string) (string,error))
+    return sendreqf(msg,rpctype)
+}
+
+func init(){
+       p, err := plugin.Open("dev.so")
+       if err != nil {
+	   panic(err)
+       }
+
+       //Call
+       call, err := p.Lookup("Call")
+       if err != nil {
+	   panic(err)
+       }
+       callf := call.(func(interface{}))
+
+       //Dcrmcall
+       dcrmcall, err := p.Lookup("Dcrmcall")
+       if err != nil {
+	   panic(err)
+       }
+       dcrmcallf := dcrmcall.(func(interface{}) <-chan string)
+
+       //Dcrmcallret
+       dcrmcallret, err := p.Lookup("Dcrmcallret")
+       if err != nil {
+	   panic(err)
+       }
+       dcrmcallretf := dcrmcallret.(func(interface{}))
+
+       //RegP2pGetGroupCallBack
+       getgroup, err := p.Lookup("RegP2pGetGroupCallBack")
+       if err != nil {
+	   panic(err)
+       }
+       getgroupf := getgroup.(func(func(string)(int,string)))
+
+       //RegP2pSendToGroupAllNodesCallBack
+       sendall, err := p.Lookup("RegP2pSendToGroupAllNodesCallBack")
+       if err != nil {
+	   panic(err)
+       }
+       sendallf := sendall.(func(func(string,string)string))
+
+       //RegP2pGetSelfEnodeCallBack
+       getself, err := p.Lookup("RegP2pGetSelfEnodeCallBack")
+       if err != nil {
+	   panic(err)
+       }
+       getselff := getself.(func(func()string))
+
+       //RegP2pBroadcastInGroupOthersCallBack
+       broadingroup, err := p.Lookup("RegP2pBroadcastInGroupOthersCallBack")
+       if err != nil {
+	   panic(err)
+       }
+       broadingroupf := broadingroup.(func(func(string,string)))
+
+       //RegP2pSendMsgToPeerCallBack
+       sendmsg, err := p.Lookup("RegP2pSendMsgToPeerCallBack")
+       if err != nil {
+	   panic(err)
+       }
+       sendmsgf := sendmsg.(func(func(string,string)error))
+
+	p2pdcrm.RegisterRecvCallback(Call)
+	p2pdcrm.SdkProtocol_registerBroadcastInGroupCallback(callf)
+	p2pdcrm.SdkProtocol_registerSendToGroupCallback(dcrmcallf)
+	p2pdcrm.SdkProtocol_registerSendToGroupReturnCallback(dcrmcallretf)
+	p2pdcrm.RegisterCallback(callf)
+
+	getgroupf(p2pdcrm.SdkProtocol_getGroup)
+	sendallf(p2pdcrm.SdkProtocol_SendToGroupAllNodes)
+	getselff(p2pdcrm.GetSelfEnode)
+	broadingroupf(p2pdcrm.SdkProtocol_broadcastInGroupOthers)
+	sendmsgf(p2pdcrm.SendMsgToPeer)
+}
+
+func Call(msg interface{}) {
+    s := msg.(string)
+    SetUpMsgList(s)
+}
+
+var parts = make(map[int]string)
+func receiveSplitKey(msg interface{}){
+	cur_enode = p2pdcrm.GetSelfID().String()
+	log.Debug("","cur_enode", cur_enode)
+	
+	m := strings.Split(msg.(string),"|")
+	if len(m) != 2 {
+	    return
+	}
+
+	splitkey := m[1]
+
+	head := strings.Split(splitkey, ":")[0]
+	body := strings.Split(splitkey, ":")[1]
+	if a := strings.Split(body, "#"); len(a) > 1 {
+	    tmp2 = a[0]
+	    body = a[1]
+	}
+	p, _ := strconv.Atoi(strings.Split(head, "dcrmslash")[0])
+	total, _ := strconv.Atoi(strings.Split(head, "dcrmslash")[1])
+	parts[p] = body
+
+	log.Info("","parts len",len(parts),"total",total)
+	if len(parts) == total {
+		var c string = ""
+		for i := 1; i <= total; i++ {
+			c += parts[i]
+		}
+		 time.Sleep(time.Duration(2)*time.Second) //1000 == 1s
+		////
+		Init(m[0])
+	}
+}
+
+func Init(groupId string) {
+    log.Info("=============Init================","get group id",groupId)
+    if init_times >= 1 {
+	return
+    }
+
+       p, err := plugin.Open("dev.so")
+       if err != nil {
+	   panic(err)
+       }
+       //InitDev
+       initdev, err := p.Lookup("InitDev")
+       if err != nil {
+	   panic(err)
+       }
+       initdevf := initdev.(func(string))
+    initdevf(groupId)
+    init_times = 1
+}
+
+func SetUpMsgList(msg string) {
+
+    mm := strings.Split(msg,"dcrmslash")
+    if len(mm) >= 2 {
+	receiveSplitKey(msg)
+	return
+    }
+}
+//==========================================================
+
